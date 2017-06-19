@@ -21,6 +21,30 @@ static void show_usage(string name)
 int main(int argc, char* argv[])
 {
     string dataset, instance;
+    float *eCapacity;
+    float *rCapacity;
+    int **solution;
+    int *sUConstraints;
+    int *domain;
+    vector< vector<int> > rAdjacencyList;
+    vector< vector<int> > rProximityList;
+    vector< vector<int> > eConstraints;
+    vector< vector<int> > rConstraints;
+    const int[10] cPenalties = [20, 10, 10, 10, 10, 10, 50, 10, 10, 10];
+    const int UNUSED_CONSTRAINT         = -1;
+    const int ALLOCATION_CONSTRAINT     =  0;
+    const int NONALLOCATION_CONSTRAINT  =  1;
+    const int ONEOF_CONSTRAINT          =  2;
+    const int CAPACITY_CONSTRAINT       =  3;
+    const int SAMEROOM_CONSTRAINT       =  4;
+    const int NOTSAMEROOM_CONSTRAINT    =  5;
+    const int NOTSHARING_CONSTRAINT     =  6;
+    const int ADJACENCY_CONSTRAINT      =  7;
+    const int NEARBY_CONSTRAINT         =  8;
+    const int AWAYFROM_CONSTRAINT       =  9;
+
+
+    // Read program arguments
 
     if (argc < 5)
     {
@@ -59,11 +83,11 @@ int main(int argc, char* argv[])
         }
     }
 
-    // Read file
+    // Reading and representation process
 
-    
 
-    // Represent instance
+
+    // Solution search process
 
     return 0;
 }
