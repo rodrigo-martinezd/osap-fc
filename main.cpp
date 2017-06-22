@@ -34,8 +34,8 @@ int main(int argc, char* argv[])
     vector<int> brokenSCList;
     vector< vector<int> > rAdjacency;
     vector< vector<int> > rProximity;
-    vector< vector<int> > eConstraints;
-    vector< vector<int> > rConstraints;
+    vector< vector< vector<int> > > eConstraints;
+    vector< vector< vector<int> > > rConstraints;
     const int cPenalties[10] = {20, 10, 10, 10, 10, 10, 50, 10, 10, 10};
     const int UNUSED_CONSTRAINT         = -1;
     const int ALLOCATION_CONSTRAINT     =  0;
@@ -128,6 +128,10 @@ int main(int argc, char* argv[])
                     eCapacities = new float[eTotal];
                     rCapacities = new float[rTotal];
                     domain = new int[rTotal];
+
+                    // Innitialize vectors to fit index with ID
+                    eConstraints.resize(eTotal, vector< vector<int> >(1, vector<int>()));
+                    rConstraints.resize(rTotal, vector< vector<int> >(1, vector<int>()));
                 }
                 else if (step == 3) {
                     // Add last proximity vectors
@@ -168,6 +172,7 @@ int main(int argc, char* argv[])
                         ss >> rID >> rFloor >> rCapacity >> rAdjacencySize;
 
                         rCapacities[rID] = rCapacity;
+                        domain[rID] = rID;
 
                         // Build Adjacency vector
 
@@ -199,6 +204,60 @@ int main(int argc, char* argv[])
                     break;
                 case 3:
                     // Read constraints
+                    int cID;
+                    int cType;
+                    int cHardness;
+                    int param1;
+                    int param2;
+
+                    ss >> cID >> cType >> cHardness >> param1 >> param2;
+
+                    if (cType != 3) {
+                        // Entity constraints
+
+                        if (eConstraints[param1][0].size() == 0) {
+                            eConstraints[param1][0].push_back(cID);
+                            eConstraints[param1][0].push_back(cType);
+                            eConstraints[param1][0].push_back(cHardness);
+                            eConstraints[param1][0].push_back(param2);
+                        }else {
+                            vector<int> constraint;
+
+                            constraint.push_back(cID);
+                            constraint.push_back(cType);
+                            constraint.push_back(cHardness);
+                            constraint.push_back(param2);
+
+                            eConstraints[param1].push_back(constraint);
+                        }
+
+                        if (cType >=4 && cType != 6) {
+                            // Save restriction to both entities
+
+                            if (eConstraints[param2][0].size() == 0) {
+                                eConstraints[param2][0].push_back(cID);
+                                eConstraints[param2][0].push_back(cType);
+                                eConstraints[param2][0].push_back(cHardness);
+                                eConstraints[param2][0].push_back(param1);
+                            }else {
+                                vector<int> mirrorConstraint;
+
+                                mirrorConstraint.push_back(cID);
+                                mirrorConstraint.push_back(cType);
+                                mirrorConstraint.push_back(cHardness);
+                                mirrorConstraint.push_back(param1);
+
+                                eConstraints[param2].push_back(mirrorConstraint);
+                            }
+                        }
+                    }else {
+                        // Room constraints
+                        rConstraints[param1][0].push_back(cID);
+                        rConstraints[param1][0].push_back(3);
+                        rConstraints[param1][0].push_back(cHardness);
+                        rConstraints[param1][0].push_back(-1);
+                    }
+
                     break;
                 default:
                     // Read headers
@@ -240,6 +299,37 @@ int main(int argc, char* argv[])
         cout << endl;
     }
     cout << "Entities: " << eTotal << "\tRooms: " << rTotal << "\tConstraints: "<< cTotal <<endl;
+
+    cout << "Restricciones de entidades" <<endl;
+    cout << "-----------------------------------" << endl;
+    for(int i = 0; i < eTotal; i++) {
+        cout << "Restricciones de :" << i <<endl;
+        cout << "===========================================" << endl;
+        cout << "cID\tcType\tcHardness\tParam" << endl;
+        for (int j = 0; j < eConstraints[i].size(); j++) {
+            if (eConstraints[i][j].size()) {
+                cout << eConstraints[i][j][0] << "\t"
+                     << eConstraints[i][j][1] << "\t"
+                     << eConstraints[i][j][2] << "\t\t"
+                     << eConstraints[i][j][3] << "\n";
+            }
+        }
+        cout << "===========================================" << endl;
+    }
+
+    cout << "Restricciones de cuartos" <<endl;
+    cout << "-----------------------------------" << endl;
+    for(int i = 0; i < rTotal; i++) {
+        cout << "Restricciones de :" << i <<endl;
+        cout << "===========================================" << endl;
+        if (rConstraints[i][0].size()) {
+            cout << "cID\tcType\tcHardness\tParam" << endl;
+            cout << rConstraints[i][0][0] << "\t"
+                 << rConstraints[i][0][1] << "\t"
+                 << rConstraints[i][0][2] << "\t\t"
+                 << rConstraints[i][0][3] << "\n";
+        }
+    }
 
     /*
     choose criterion of stop
