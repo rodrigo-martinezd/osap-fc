@@ -2,6 +2,9 @@
 #include <vector>
 #include <fstream>
 #include <sstream>
+#include "fc.h"
+
+#define NULL 0
 
 using namespace std;
 
@@ -30,8 +33,9 @@ int main(int argc, char* argv[])
     float *eCapacities;
     float *rCapacities;
     int *solution;
-    int *domain;
-    vector<int> brokenSCList;
+    int *optimalSolution;
+    int **domain;
+    vector < vector<int> > brokenSCList; // Save cID and cType
     vector< vector<int> > rAdjacency;
     vector< vector<int> > rProximity;
     vector< vector< vector<int> > > eConstraints;
@@ -127,7 +131,22 @@ int main(int argc, char* argv[])
 
                     eCapacities = new float[eTotal];
                     rCapacities = new float[rTotal];
-                    domain = new int[rTotal];
+                    solution = new int[eTotal];
+                    optimalSolution new int[eTotal];
+
+                    // Assign domain memory and Innitialize variables
+
+                    domain = new int*[eTotal];
+                    for(int i = 0; i < eTotal; i++) {
+                        domain[i] = new int[rTotal];
+                        for(int j = 0; j < rTotal; j++) {
+                            domain[i][j] = j;
+                        }
+
+                        solution[i] = NULL;
+                        optimalSolution[i] = NULL;
+
+                    }
 
                     // Innitialize vectors to fit index with ID
                     eConstraints.resize(eTotal, vector< vector<int> >(1, vector<int>()));
@@ -172,13 +191,11 @@ int main(int argc, char* argv[])
                         ss >> rID >> rFloor >> rCapacity >> rAdjacencySize;
 
                         rCapacities[rID] = rCapacity;
-                        domain[rID] = rID;
 
                         // Build Adjacency vector
 
                         for(int i = 0; i < rAdjacencySize; i++ ){
                             ss >> value;
-                            cout << value << ", " << endl;
                             adjacencyVector.push_back(value);
                         }
 
@@ -192,6 +209,7 @@ int main(int argc, char* argv[])
 
                             previousFloor = rFloor;
                             startRoom = rID;
+                            endRoom = rID;
                             proximity.clear();
                             proximity.push_back(rID);
                         }else {
@@ -276,7 +294,6 @@ int main(int argc, char* argv[])
     }
 
 
-
     // Solution search process
     for (int i = 0; i < eTotal; i++)
     {
@@ -331,12 +348,70 @@ int main(int argc, char* argv[])
         }
     }
 
-    /*
-    choose criterion of stop
-    choose first variable to instantiate
-    start process
-    clone domain
-    take first not choosen value of clone domain
-    */
+
+    // FORWARD CHECKING
+
+    int v = NULL;
+    int previousV = NULL;
+    int value;
+    bool assign = false;
+    vector<int> variables;
+    vector<int> selectedVariables;
+
+    // Guardar lista de variables a instanciar
+    for(int i = 0; i < eTotal; i++) {
+        variables.push_back(i);
+    }
+
+    vector<int> variableList(variables.begin(), veriables.end());
+
+    // Mientras existan variables con valores sin revisar
+
+    while(!fc::isSearchFinish(domain)) {
+        // Seleccionar variable según criterio (ej: secuencial, + conectada)
+        v = fc::selectVariable(v, variableList, selectedVariables, criterion);
+
+        // Seleccionar valor del dominio
+        // Si es un backtracking continuar con el siguiente valor, si no tomar desde el primero.
+        for(int i = solution[v] ? solution[v] + 1 : 0; i < domain[v].size(); i++) {
+            value = domain[v][i];
+
+            // Verificar que el valor sea consistente
+            if (fc::constraintCheck(v, value, eConstraints[v], rConstraints[v])) {
+
+                // Chequear valores inconsistentes con la variable instanciada y
+                // filtrarlos de los dominios de variables vecinas
+                fc::checkAndReduce(v, value, eConstraints, domain);
+                assign = true;
+                break;
+            }
+        }
+
+        if (assing){
+            // Agregar a las variables instanciadas y agregar valor a la solución
+            selectedVariables.push_back(v);
+            solution[v] = value;
+
+            // Si el total de variables instanciadas es igual al total de entidades
+            // se encontró una solución parcial
+
+            if(selectedVariables.size() ===  eTotal) {
+
+                // Sobreescribir la solución óptima si la encontrada es mejor
+                optimalSolution = fc::evaluate(optimalSolution, solution);
+
+                // HERE!!! build output for parcial solution
+
+                // Restaurar valores eliminados de dominios vecinos por inconsistencias con el valor instanciado
+                fc::restore(solution[selectedVariables.pop_back()], v, eConstraints, domain[v]);
+            }
+
+            assign = false;
+        }else {
+            // Restaurar valores eliminados de dominios vecinos por inconsistencias con el valor instanciado
+            fc::restore(solution[selectedVariables.pop_back()], v, eConstraints, domain[v]);
+        }
+    }
+
     return 0;
 }
