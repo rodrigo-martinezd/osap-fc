@@ -1,27 +1,31 @@
 #include <iostream>
 #include <vector>
+#include <list>
 #include <fstream>
 #include <sstream>
-#include "fc.h"
-
-#define NULL 0
 
 using namespace std;
 
-static void show_usage(string name)
-{
-    cerr << "Instrucciones de uso: " << name << "\n"
-         << "Opciones:\n"
-         << "\t-d, --dataset\t\tEl siguiente argumento luego de este parámetro\n"
-         << "\t\t\t\tdebe ser el nombre del dataset a utilizar\n"
-         << endl
-         << "\t-i, --instance\t\tEl siguiente argumento luego de este parámetro\n"
-         << "\t\t\t\tdebe ser el nombre de la instancia a utilizar\n"
-         << "\t\t\t\tsin incluir la extensión.\n\n"
-         << "\t** Ambas opciones son requeridas por el programa.\n\n"
-         << "Ejemplo: \n"
-         << "\t" << name << " -d nott_data -i nott1\n\n" ;
-}
+const int cPenalties[10] = {20, 10, 10, 10, 10, 10, 50, 10, 10, 10};
+const int UNUSED_CONSTRAINT         = -1;
+const int ALLOCATION_CONSTRAINT     =  0;
+const int NONALLOCATION_CONSTRAINT  =  1;
+const int ONEOF_CONSTRAINT          =  2;
+const int CAPACITY_CONSTRAINT       =  3;
+const int SAMEROOM_CONSTRAINT       =  4;
+const int NOTSAMEROOM_CONSTRAINT    =  5;
+const int NOTSHARING_CONSTRAINT     =  6;
+const int ADJACENCY_CONSTRAINT      =  7;
+const int NEARBY_CONSTRAINT         =  8;
+const int AWAYFROM_CONSTRAINT       =  9;
+
+void show_usage(string name);
+int selectVariable(list<int> entities, vector< vector< vector<int> > > eConstraintsMatrix, int iOrder);
+void restore(int value, vector< vector< vector<int> > > eConstraintsMatrix, int **domain);
+bool check_forward(int value, vector< vector< vector<int> > > eConstraintsMatrix, int **domain);
+void forward_checking(int entity, list<int> entities, float *eCapacities, float *rCapacities, vector< vector< vector<int> > > eConstraintsMatrix, vector< vector< vector<int> > > rConstraintsMatrix, int **domain);
+
+
 
 int main(int argc, char* argv[])
 {
@@ -30,28 +34,18 @@ int main(int argc, char* argv[])
     int eTotal = 0;
     int rTotal = 0;
     int cTotal = 0;
+    int iOrder;
     float *eCapacities;
     float *rCapacities;
     int *solution;
     int *optimalSolution;
     int **domain;
+    list<int> entities;
     vector < vector<int> > brokenSCList; // Save cID and cType
     vector< vector<int> > rAdjacency;
     vector< vector<int> > rProximity;
     vector< vector< vector<int> > > eConstraints;
     vector< vector< vector<int> > > rConstraints;
-    const int cPenalties[10] = {20, 10, 10, 10, 10, 10, 50, 10, 10, 10};
-    const int UNUSED_CONSTRAINT         = -1;
-    const int ALLOCATION_CONSTRAINT     =  0;
-    const int NONALLOCATION_CONSTRAINT  =  1;
-    const int ONEOF_CONSTRAINT          =  2;
-    const int CAPACITY_CONSTRAINT       =  3;
-    const int SAMEROOM_CONSTRAINT       =  4;
-    const int NOTSAMEROOM_CONSTRAINT    =  5;
-    const int NOTSHARING_CONSTRAINT     =  6;
-    const int ADJACENCY_CONSTRAINT      =  7;
-    const int NEARBY_CONSTRAINT         =  8;
-    const int AWAYFROM_CONSTRAINT       =  9;
 
 
     // Read program arguments
@@ -66,20 +60,24 @@ int main(int argc, char* argv[])
         {
             string arg = (string) argv[i];
 
-            if(arg == "-d" ||  arg == "--dataset")
-            {
+            if(arg == "-d" ||  arg == "--dataset"){
                 if (i + 1 < argc) dataset = (string) argv[++i];
-                else
-                {
+                else{
                     show_usage(argv[0]);
                     return 1;
                 }
-            }
-            else if (arg == "-i" || arg == "--instance")
-            {
+            }else if (arg == "-i" || arg == "--instance"){
                 if (i + 1 < argc) instance = (string) argv[++i];
-                else
-                {
+                else{
+                    show_usage(argv[0]);
+                    return 1;
+                }
+            }else if (arg == "-io" || arg == "--instantiation-order"){
+                if (i + 1 < argc) {
+                    stringstream ss;
+                    ss << argv[++i];
+                    ss >> iOrder;
+                }else {
                     show_usage(argv[0]);
                     return 1;
                 }
@@ -132,7 +130,7 @@ int main(int argc, char* argv[])
                     eCapacities = new float[eTotal];
                     rCapacities = new float[rTotal];
                     solution = new int[eTotal];
-                    optimalSolution new int[eTotal];
+                    optimalSolution = new int[eTotal];
 
                     // Assign domain memory and Innitialize variables
 
@@ -143,9 +141,9 @@ int main(int argc, char* argv[])
                             domain[i][j] = j;
                         }
 
-                        solution[i] = NULL;
-                        optimalSolution[i] = NULL;
-
+                        solution[i] = -1;
+                        optimalSolution[i] = -1;
+                        entities.push_back(i);
                     }
 
                     // Innitialize vectors to fit index with ID
@@ -305,12 +303,12 @@ int main(int argc, char* argv[])
         cout << "rRooms[" << i << "]: " << rCapacities[i] << endl;
         // show adjacency vector
         cout << "Lista de adjancia lista de: " << i << endl;
-        for(int j = 0; j < rAdjacency[i].size(); j++) {
+        for(unsigned int j = 0; j < rAdjacency[i].size(); j++) {
             cout << rAdjacency[i][j] << ", " ;
         }
         cout << endl;
         cout << "Lista de proximidad lista de: " << i << endl;
-        for(int j = 0; j < rProximity[i].size(); j++) {
+        for(unsigned int j = 0; j < rProximity[i].size(); j++) {
             cout << rProximity[i][j] << ", " ;
         }
         cout << endl;
@@ -323,7 +321,7 @@ int main(int argc, char* argv[])
         cout << "Restricciones de :" << i <<endl;
         cout << "===========================================" << endl;
         cout << "cID\tcType\tcHardness\tParam" << endl;
-        for (int j = 0; j < eConstraints[i].size(); j++) {
+        for (unsigned int j = 0; j < eConstraints[i].size(); j++) {
             if (eConstraints[i][j].size()) {
                 cout << eConstraints[i][j][0] << "\t"
                      << eConstraints[i][j][1] << "\t"
@@ -349,9 +347,12 @@ int main(int argc, char* argv[])
     }
 
 
+    int startEntity = selectVariable(entities, eConstraints, iOrder);
+    forward_checking(startEntity, entities, eCapacities, rCapacities, eConstraints, rConstraints, domain);
+
     // FORWARD CHECKING
 
-    int v = NULL;
+    /*int v = NULL;
     int previousV = NULL;
     int value;
     bool assign = false;
@@ -411,7 +412,45 @@ int main(int argc, char* argv[])
             // Restaurar valores eliminados de dominios vecinos por inconsistencias con el valor instanciado
             fc::restore(solution[selectedVariables.pop_back()], v, eConstraints, domain[v]);
         }
-    }
+    }*/
 
     return 0;
+}
+
+int selectVariable(list<int> entities, vector< vector< vector<int> > > eConstraintsMatrix, int iOrder){
+    return 0;
+}
+
+bool check_forward(int value, vector< vector<int> > eConstraints, int **domain)
+{
+    return false;
+}
+
+void restore(int value, vector< vector<int> > eConstraints, int **domain)
+{
+
+}
+
+void forward_checking(int entity, list<int> entities, float *eCapacities, float *rCapacities, vector< vector< vector<int> > > eConstraints, vector< vector< vector<int> > > rConstraints, int **domain)
+{
+
+}
+
+
+void show_usage(string name)
+{
+    cerr << "Instrucciones de uso: " << name << "\n"
+         << "Opciones:\n"
+         << "\t-d, --dataset\t\tEl siguiente argumento luego de este parámetro\n"
+         << "\t\t\t\tdebe ser el nombre del dataset a utilizar\n"
+         << endl
+         << "\t-i, --instance\t\tEl siguiente argumento luego de este parámetro\n"
+         << "\t\t\t\tdebe ser el nombre de la instancia a utilizar\n"
+         << "\t\t\t\tsin incluir la extensión.\n\n"
+         << "\t** Ambas opciones son requeridas por el programa.\n\n"
+         << "\t-io, --instantiation-order\t\tEl siguiente argumento puede ser:\n"
+         << "\t\t\t\t - 0 : orden de instanciacion secuencial (ej: 0,1,2,...,n)\n"
+         << "\t\t\t\t - 1 : orden de instanciacion por variable más conectada\n"
+         << "Ejemplo: \n"
+         << "\t" << name << " -d nott_data -i nott1\n\n" ;
 }
