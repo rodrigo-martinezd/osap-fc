@@ -37,8 +37,8 @@ vector< vector<int> > check_constraints(int room, float roomCapacity, float *eCa
 void build_output_file(vector< vector<int> > brokenSConstraints, int *cSolution);
 void evaluate(vector< vector<int> > brokenSConstraints, int *optSolution, int *cSolution);
 list<int> getNeighbors(vector< vector<int> > eConstraints);
-void restore(int room, vector< vector<int> > eConstraints, int **domain);
-bool check_forward(int room, vector< vector<int> > eConstraints, int **domain);
+void restore(int entity, vector< vector<int> > eConstraints, int **domain);
+bool check_forward(int entity, int room, vector< vector<int> > eConstraints, int **domain);
 void forward_checking(int entity, list<int> *entities, float *eCapacities, float *rCapacities, int **domain);
 
 
@@ -148,7 +148,7 @@ int main(int argc, char* argv[])
                     for(int i = 0; i < eTotal; i++) {
                         domain[i] = new int[rTotal];
                         for(int j = 0; j < rTotal; j++) {
-                            domain[i][j] = j;
+                            domain[i][j] = -1;
                         }
 
                         solution[i] = -1;
@@ -395,7 +395,7 @@ int main(int argc, char* argv[])
     }
 
     neighbors.clear();
-    if (check_forward(0, eConstraints[0], domain)){
+    if (check_forward(0, 0, eConstraints[0], domain)){
         cout << "=========================" << endl;
         cout << "     despues de filtrar " << endl;
         cout << "=========================" << endl;
@@ -419,6 +419,21 @@ int main(int argc, char* argv[])
         }else{
             cout << "cID: " << constraints[i][0] << "\tcType: " << constraints[i][1] << endl;
         }
+    }
+
+
+    restore(0, eConstraints[0], domain);
+
+    cout << "=========================" << endl;
+    cout << "     despues de restaurar " << endl;
+    cout << "=========================" << endl;
+    list<int> neighbors2 = getNeighbors(eConstraints[0]);
+    for(list<int>::iterator it=neighbors2.begin(); it != neighbors2.end();++it) {
+        cout << "dominio de : " << *it << endl;
+        for (int j = 0; j < rTotal; j++) {
+            cout << domain[*it][j] << ",";
+        }
+        cout << endl;
     }
     //forward_checking(startEntity, &entities, eCapacities, rCapacities, domain);
     // show optimal solution
@@ -664,34 +679,35 @@ list<int> getNeighbors(vector< vector<int> > eConstraints) {
     return neighbors;
 }
 
-bool check_forward(int room, vector< vector<int> > eConstraints, int **domain)
+bool check_forward(int entity, int room, vector< vector<int> > eConstraints, int **domain)
 {
     /*
         Setea los valores de dominio de las entidades vecinas (unidas por restricciones)
-        a -1 si el valor no es consistente con cualquier restricción dura. En el caso de
-        que una entidad se quede sin valores válidos se setea dwo (domain wipe out) a true
-        para indicar que el valor de la instanciacion no es válido y se sale de la función.
+        al valor de la entidad en conflicto si el valor no es consistente con cualquier
+        restricción dura. En el caso de que una entidad se quede sin valores válidos
+        se setea dwo (domain wipe out) a true para indicar que el valor de la
+        instanciacion no es válido y se sale de la función.
     */
     list<int> neighbors = getNeighbors(eConstraints);
     for(list<int>::iterator it=neighbors.begin(); it != neighbors.end(); ++it) {
         bool dwo = true;
         for(int i = 0; i < rTotal; i++) {
-            if (domain[*it][i] == -1) continue;
+            if (domain[*it][i] != -1) continue;
             else {
                 // check constraint satisfaction between room and domain[*it][i]
                 // if not valid set domain[*it][i] = -1
                 for (unsigned int j = 0; j < eConstraints.size(); j++) {
                     if (eConstraints[j][3] == *it) {
                         if(eConstraints[j][1] == ::SAMEROOM_CONSTRAINT) {
-                            if (domain[*it][i] != room && eConstraints[j][2] == 1) {
-                                domain[*it][i] = -1;
+                            if (i != room && eConstraints[j][2] == 1) {
+                                domain[*it][i] = entity;
                                 break;
                             }
                         }
 
                         if (eConstraints[j][1] == ::NOTSAMEROOM_CONSTRAINT) {
-                            if (domain[*it][i] == room && eConstraints[j][2] == 1) {
-                                domain[*it][i] = -1;
+                            if (i == room && eConstraints[j][2] == 1) {
+                                domain[*it][i] = entity;
                                 break;
                             }
                         }
@@ -699,14 +715,14 @@ bool check_forward(int room, vector< vector<int> > eConstraints, int **domain)
                         if (eConstraints[j][1] ==  ::ADJACENCY_CONSTRAINT) {
                             bool adjacent = false;
                             for(unsigned int k=0; k < ::rAdjacency[room].size(); k++) {
-                                if (::rAdjacency[room][k] == domain[*it][i]) {
+                                if (::rAdjacency[room][k] == i) {
                                     adjacent = true;
                                     break;
                                 }
                             }
 
                             if (!adjacent && eConstraints[j][2] == 1) {
-                                domain[*it][i] = -1;
+                                domain[*it][i] = entity;
                                 break;
                             }
                         }
@@ -714,13 +730,13 @@ bool check_forward(int room, vector< vector<int> > eConstraints, int **domain)
                         if (eConstraints[j][1] == ::NEARBY_CONSTRAINT) {
                             bool nearby = false;
                             for(unsigned int k = 0; k < ::rProximity[room].size(); k++) {
-                                if (::rProximity[room][k] == domain[*it][i]) {
+                                if (::rProximity[room][k] == i) {
                                     nearby = true;
                                     break;
                                 }
                             }
                             if (!nearby && eConstraints[j][2] == 1) {
-                                domain[*it][i] = -1;
+                                domain[*it][i] = entity;
                                 break;
                             }
                         }
@@ -728,20 +744,20 @@ bool check_forward(int room, vector< vector<int> > eConstraints, int **domain)
                         if (eConstraints[j][1] == ::AWAYFROM_CONSTRAINT) {
                             bool nearby = false;
                             for(unsigned int k = 0; k < ::rProximity[room].size(); k++) {
-                                if (::rProximity[room][k] == domain[*it][i]) {
+                                if (::rProximity[room][k] == i) {
                                     nearby = true;
                                     break;
                                 }
                             }
                             if (nearby && eConstraints[j][2] == 1) {
-                                domain[*it][i] = -1;
+                                domain[*it][i] = entity;
                                 break;
                             }
                         }
                     }
                 }
             }
-            if (domain[*it][i] != -1) dwo = false;
+            if (domain[*it][i] == -1) dwo = false;
         }
         if (dwo) return false;
     }
@@ -749,29 +765,20 @@ bool check_forward(int room, vector< vector<int> > eConstraints, int **domain)
     return true;
 }
 
-void restore(int room, vector< vector<int> > eConstraints, int **domain)
+void restore(int entity, vector< vector<int> > eConstraints, int **domain)
 {
     /*
-        Restaura todos los valores eliminados (seteados a -1) del dominio de las
-        entidades vecinas (conectadas por restricciones) que fueron modificados
-        antes de detectar un dwo (domain-wipe-out)
-
-        regresa el dominio de dichas entidades al estado previo al filtrado de
-        dominio.
+        Restaura todos los valores eliminados (seteados al valor de la entidad en conflicto)
+        del dominio de las entidades vecinas (conectadas por restricciones) que fueron modificados
+        antes de detectar un dwo (domain-wipe-out) regresa el dominio de dichas
+        entidades al estado previo al filtrado de dominio.
     */
 
     list<int> neighbors = getNeighbors(eConstraints);
     for(list<int>::iterator it=neighbors.begin(); it != neighbors.end(); ++it) {
         for(int i = 0; i < rTotal; i++) {
-            if (domain[*it][i] != -1) continue;
-            else {
-                for (unsigned int j = 0; j < eConstraints.size(); j++) {
-                    // Retorna los valores originales al dominio de las entidades vecinas
-                    if (eConstraints[j][3] == *it) {
-
-
-                    }
-                }
+            if (domain[*it][i] == entity) {
+                domain[*it][i] = -1;
             }
         }
     }
