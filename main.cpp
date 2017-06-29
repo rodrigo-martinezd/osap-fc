@@ -429,7 +429,7 @@ int main(int argc, char* argv[])
 
     // Mostrar solución óptima
     cout << "=============================================" << endl;
-    cout << "                solución óptima              " << endl;
+    cout << "             OPTIMAL SOLUTION                " << endl;
     cout << "=============================================" << endl;
     cout << endl;
     for(int i=0; i < ::eTotal; i++) {
@@ -681,8 +681,8 @@ void save_solution(set< vector<int> >broken_constraints, int *solution, vector< 
 
 vector< vector<float> > evaluate(set< vector<int> > constraints, float *eCapacities, float *rCapacities, int *optSolution, int *cSolution, int **domain) {
     /*
-        Retorna el peso de la solución considerando el peso del espacio mal utilizado
-        y las penalizaciones de las restricciones suaves quebrantadas
+        Evalua la solución parcial calcula todas las estadisticas y las retorna.
+        En el caso de que la solucion parcial sea mejor a la actual óptima, la reemplaza.
     */
     // Primero se eliminan las restricciones duplicadas
     float penalties = 0, misusedSpace = 0, requiredSpace = 0;
@@ -690,17 +690,10 @@ vector< vector<float> > evaluate(set< vector<int> > constraints, float *eCapacit
     vector< vector<float> > stadistics;
 
 
-    // Obtiene restricciones quebrantadas
-    //set< vector<int> > uSConstraints = getBrokenConstraints(cSolution, eCapacities, rCapacities, domain);
-
     // Obtener el total de penalizaciones por restricciones suaves quebrantadas
-    cout << "RESTRICCIONES QUEBRANTADAS"<<endl;
     for(set< vector<int> >::iterator it = constraints.begin(); it != constraints.end(); ++it) {
         penalties += ::cPenalties[(*it)[1]];
-        cout << "cID:\t" << (*it)[0] << "\tcType:\t" << (*it)[1]  << "\tPenalty:\t" <<cPenalties[(*it)[1]]<< endl;
     }
-
-    cout << "total de restricciones unicas quebrantadas:  " << constraints.size() << endl;
 
     // Calcula el espacio mal utilizado
     for(int i = 0; i < ::rTotal; i++) {
@@ -730,7 +723,6 @@ vector< vector<float> > evaluate(set< vector<int> > constraints, float *eCapacit
         requiredSpace = 0;
     }
 
-    cout << "TOTAL DE PENALIZACIONES:\t" << penalties << endl;
     misusedSpace += penalties;
 
     vector<float> general_stadistics;
@@ -873,15 +865,6 @@ void restore(int entity, vector< vector<int> > eConstraints, int **domain)
 void forward_checking(int entity, list<int> *entities, float *eCapacities, float *rCapacities, int **domain)
 {
     bool is_consistent = false;
-    cout << "Entidad \t" << entity << endl;
-    cout << "----------------------------------------" << endl;
-    for (int j = 0; j < ::rTotal; j++) {
-        if (domain[entity][j] == -1) {
-            cout << j << ", ";
-        }
-    }
-    cout << endl;
-    cout << endl;
 
     // Intenta probar cada valor del dominio de la entidad
     for(int i = 0; i < rTotal; i++) {
@@ -893,7 +876,6 @@ void forward_checking(int entity, list<int> *entities, float *eCapacities, float
 
         // Chequea restricciones con la variable como de asignación o capacidad de cuarto
         is_consistent = check_constraints(i, rCapacities[i], eCapacities, eConstraints[entity], rConstraints[i]);
-        cout << "entity:\t" << entity << "\tvalue:\t" << i << "\tvalid?:\t" << is_consistent << endl;
         if (is_consistent) {
 
             // Si se está en la ultima entidad de la lista de instanciación
@@ -936,6 +918,7 @@ void forward_checking(int entity, list<int> *entities, float *eCapacities, float
             }
         }
     }
+    ::solution[entity] = -1;
 }
 
 // Funciones de ordenamiento para indicar el orden de instanciación
@@ -962,8 +945,14 @@ void show_usage(string name)
          << "\t** Ambas opciones son requeridas por el programa.\n\n"
          << "\t-io, --instantiation-order\t\tOrden de instanciacion:\n"
          << "\t\t\t\t - 0 : secuencial (ej: 0,1,2,...,n)\n"
-         << "\t\t\t\t - 1 : variable más conectada\n"
-         << "\t\t\t\t - 2 : variable menos conectada\n"
+         << "\t\t\t\t - 1 : variable más conectada primero\n"
+         << "\t\t\t\t - 2 : variable menos conectada primero\n"
+         <<endl
+         << "\t-b, --benchmark\t\t genera un archivo con tiempos\n"
+         <<endl
+         << "\t-pq, --partials-quantity\t el siguiente argumento indica \n"
+         <<"\t\t\t\tla cantidad de soluciones parciales a\n"
+         <<"\t\t\t\t guardar. (default: 1)\n"
          << "Ejemplo: \n"
          << "\t" << name << " -d nott_data -i nott1\n\n" ;
 }
