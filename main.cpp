@@ -23,6 +23,7 @@ const int NEARBY_CONSTRAINT         =  8;
 const int AWAYFROM_CONSTRAINT       =  9;
 
 clock_t bench_time;
+string instance;
 int eTotal = 0;
 int rTotal = 0;
 int cTotal = 0;
@@ -32,6 +33,7 @@ bool benchmark = false;
 int *solution;
 int *optimalSolution;
 int minEvaluation = MAX_EVALUATION;
+vector< vector<float> > optimalStadistics;
 set < vector<int> > optimalBSConstraints;
 vector< vector< vector<int> > > eConstraints;
 vector< vector< vector<int> > > rConstraints;
@@ -57,7 +59,7 @@ void forward_checking(int entity, list<int> *entities, float *eCapacities, float
 
 int main(int argc, char* argv[])
 {
-    string dataset, instance;
+    string dataset;
     ifstream file;
     int iOrder = 0;
     float *eCapacities;
@@ -437,6 +439,8 @@ int main(int argc, char* argv[])
     }
     cout << "PESO:\t" << minEvaluation << endl;
 
+    save_solution(::optimalBSConstraints, ::optimalSolution, ::optimalStadistics, false);
+
     return 0;
 }
 
@@ -532,10 +536,6 @@ bool check_constraints(int room, float roomCapacity, float *eCapacities, vector<
     }
 
     return consistent;
-}
-
-void save_optimal(vector< vector<int> > brokenSConstraints, int *cSolution) {
-
 }
 
 set< vector<int> > getBrokenConstraints(int *pSolution, float *eCapacities, float *rCapacities, int**domain) {
@@ -674,8 +674,36 @@ void save_benchmark(int partials, float seconds) {
 
 }
 
-void save_solution(set< vector<int> >broken_constraints, int *solution, vector< vector<float> > stadistics, bool partial_flag) {
+void save_solution(set< vector<int> >broken_constraints, int *cSolution, vector< vector<float> > stadistics, bool partial_flag) {
+    ofstream file;
+    stringstream ss;
+    ss << ::partials;
+    string path = partial_flag ? ("./out/partials/" + ::instance + "_partial_" + ss.str() + ".out") :
+                  "./out/" + ::instance + ".out";
+    vector<char> constPath(path.begin(), path.end());
+    constPath.push_back('\0');
+    file.open(&constPath[0]);
+    file << broken_constraints.size();
+    for(set< vector<int> >::iterator it=broken_constraints.begin(); it != broken_constraints.end(); ++it) {
+        file << "\t" << (*it)[0];
+    }
+    file << endl;
+    file << stadistics[0][1] << "\t" << stadistics[0][2] << "\t" << stadistics[0][3] << endl;
+    file << endl;
+    file << endl;
+    for(unsigned int i = 1; i < stadistics.size(); i++) {
+        int roomID = (int) stadistics[i][0];
+        file << roomID << "\t" << stadistics[i][1] << "\t" ;
+        file <<stadistics[i][2] << "\t" << (int) stadistics[i][3];
+        for(int j = 0; j < ::eTotal; j++) {
+            if(cSolution[j] == roomID) {
+                file << "\t" << j;
+            }
+        }
+        file << endl;
 
+    }
+    file.close();
 }
 
 
@@ -687,6 +715,7 @@ vector< vector<float> > evaluate(set< vector<int> > constraints, float *eCapacit
     // Primero se eliminan las restricciones duplicadas
     float penalties = 0, misusedSpace = 0, requiredSpace = 0;
     float unused_space = 0, overused_space = 0, total_unused = 0, total_overused = 0;
+    float room_entities = 0;
     vector< vector<float> > stadistics;
 
 
@@ -699,6 +728,7 @@ vector< vector<float> > evaluate(set< vector<int> > constraints, float *eCapacit
     for(int i = 0; i < ::rTotal; i++) {
         for(int j = 0; j < ::eTotal; j++) {
             if (cSolution[j] == i) {
+                room_entities++;
                 requiredSpace += eCapacities[j];
             }
         }
@@ -717,10 +747,12 @@ vector< vector<float> > evaluate(set< vector<int> > constraints, float *eCapacit
         room_stadistics.push_back((float) i);
         room_stadistics.push_back(unused_space);
         room_stadistics.push_back(overused_space);
+        room_stadistics.push_back(room_entities);
 
         stadistics.push_back(room_stadistics);
 
         requiredSpace = 0;
+        room_entities = 0;
     }
 
     misusedSpace += penalties;
@@ -738,6 +770,7 @@ vector< vector<float> > evaluate(set< vector<int> > constraints, float *eCapacit
         // Se reemplaza el optimo actual por la solucion parcial
         copy(cSolution, cSolution + ::eTotal, optSolution);
         ::optimalBSConstraints = constraints;
+        ::optimalStadistics = stadistics;
         ::minEvaluation = misusedSpace;
     }
     return stadistics;

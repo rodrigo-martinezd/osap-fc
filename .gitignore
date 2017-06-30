@@ -34,3 +34,6 @@
 .idea
 .idea**
 main
+out/**
+!out/partials
+out/partials/*
