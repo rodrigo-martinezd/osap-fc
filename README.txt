@@ -35,8 +35,6 @@ Las opciones disponibles son:
 				 			- 1 : variable más conectada primero
 				 			- 2 : variable menos conectada primero
 
-	-b, --benchmark		 		Genera un archivo con tiempos de ejecución
-
 	-pq, --partials-quantity		El siguiente argumento indica la cantidad de
 						soluciones parciales a guardar. (default: 1)
 
@@ -48,12 +46,11 @@ Ejemplos:
 	./main -d nott_data -i nott1d			Ejecuta la instancia <nott1d> del
 							dataset <nott_data>.
 
-	./main -d example -i test1 -io 1 -b -pq 6	Ejecuta la instancia <test1> del
+	./main -d example -i test1 -io 1  -pq 6	Ejecuta la instancia <test1> del
 							dataset <example> con un orden
 							de instanciación de variables de
 							la <variable más conectada primero>
-							realiza <benchmark> y guarda 6
-							soluciones parciales.
+							y guarda 6 soluciones parciales.
 
 
 ########################################################
@@ -67,22 +64,3 @@ Es necesario contar con la siguiente estructura de carpetas en la carpeta raiz.
 
 Dentro de <out> se guardará la solución óptima y dentro de <partials> las soluciones
 parciales.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

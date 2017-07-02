@@ -4,7 +4,8 @@
 #include <set>
 #include <fstream>
 #include <sstream>
-#include <ctime>
+//#include <ctime>
+#include <chrono> //only for benchmark
 
 using namespace std;
 
@@ -22,14 +23,16 @@ const int ADJACENCY_CONSTRAINT      =  7;
 const int NEARBY_CONSTRAINT         =  8;
 const int AWAYFROM_CONSTRAINT       =  9;
 
-clock_t bench_time;
+auto bench_time = chrono::high_resolution_clock::now();
+bool benchmark = false;
+int benchmark_type = 0; // 1 = timing, 2 = checks, 3 = quality
+int checks = 0;
 string instance;
 int eTotal = 0;
 int rTotal = 0;
 int cTotal = 0;
 int partials_quantity = 1;
 int partials = 0;
-bool benchmark = false;
 int *solution;
 int *optimalSolution;
 int minEvaluation = MAX_EVALUATION;
@@ -40,19 +43,27 @@ vector< vector< vector<int> > > rConstraints;
 vector< vector<int> > rAdjacency;
 vector< vector<int> > rProximity;
 
+// Utility functions
 void show_usage(string name);
 bool compare_max_connected(int first, int second);
 bool compare_min_connected(int first, int second);
-void save_benchmark(int partials, float seconds);
+void save_solution(set< vector<int> >broken_constraints, int *solution, vector< vector<float> > stadistics, bool partial_flag);
+
+
+// Benchmark functions
+void save_benchmark_checks(int checks);
+void save_benchmark_timing(auto begin, auto end, float misused_space);
+void save_benchmark_quality(float misused_space, float penalties);
+
+// Algorithm FC functions
 int choose_entity(int entity, list<int> *entities);
-bool check_room_overflow(int room, float roomCapacity, float *eCapacities, int *cSolution);
-bool check_constraints(int room, float roomCapacity, float *eCapacities, vector< vector<int> > eConstraints, vector< vector<int> > rConstraints);
+bool check_room_overflow(int entity, int room, float roomCapacity, float *eCapacities, int *cSolution);
+bool check_constraints(int entity, int room, float roomCapacity, float *eCapacities, vector< vector<int> > eConstraints, vector< vector<int> > rConstraints);
 set< vector<int> > getBrokenConstraints(int *pSolution, float *eCapacities, float *rCapacities, int**domain);
 vector< vector<float> > evaluate(set< vector<int> > constraints, float *eCapacities, float *rCapacities, int *optSolution, int *cSolution, int **domain);
-void save_solution(set< vector<int> >broken_constraints, int *solution, vector< vector<float> > stadistics, bool partial_flag);
-list<int> getNeighbors(vector< vector<int> > eConstraints);
-void restore(int entity, vector< vector<int> > eConstraints, int **domain);
-bool check_forward(int entity, int room, vector< vector<int> > eConstraints, int **domain);
+list<int> getNeighbors(int next_entity, vector< vector<int> > eConstraints);
+void restore(int entity,int next_entity, vector< vector<int> > eConstraints, int **domain);
+bool check_forward(int entity, int next_entity, int room, float *eCapacitites, float *rCapacitites, vector< vector< vector<int> > > eConstraints,vector< vector< vector<int> > > rConstraints, int **domain);
 void forward_checking(int entity, list<int> *entities, float *eCapacities, float *rCapacities, int **domain);
 
 
@@ -103,6 +114,13 @@ int main(int argc, char* argv[])
                 }
             }else if (arg == "-b" || arg == "--benchmark") {
                 ::benchmark = true;
+                stringstream ss;
+                ss << argv[++i];
+                ss >> ::benchmark_type;
+                if (::benchmark_type != 1 && ::benchmark_type != 2 && ::benchmark_type != 3) {
+                    show_usage(argv[0]);
+                    return 1;
+                }
             }else if (arg == "-pq" || arg == "--partials-quantity") {
                 if (i + 1 < argc) {
                     stringstream ss;
@@ -422,7 +440,7 @@ int main(int argc, char* argv[])
                              FORWARD CHECKING
     ====================================================================
     */
-    ::bench_time = clock();
+    ::bench_time = chrono::high_resolution_clock::now();
     // Obtener primera entidad a instanciar
     int startEntity = choose_entity(-1, &entities);
 
@@ -459,17 +477,18 @@ int choose_entity(int entity, list<int> *entities){
     }else{
         int next_entity = -1;
         for(list<int>::iterator it=entities->begin(); it!= entities->end(); ++it) {
-            if (*it == entity ) {
+            if (*(it) == entity ) {
                 ++it;
-                next_entity = it != entities->end() ? *it : -1;
+                next_entity = it != entities->end() ? *(it) : -1;
                 break;
             }
         }
+
         return next_entity;
     }
 }
 
-bool check_room_overflow(int room, float roomCapacity, float *eCapacities, int *cSolution) {
+bool check_room_overflow(int entity, int room, float roomCapacity, float *eCapacities, int *cSolution) {
     /*
         verifica si la capacidad de un cuarto fue superada
     */
@@ -480,10 +499,17 @@ bool check_room_overflow(int room, float roomCapacity, float *eCapacities, int *
         }
     }
 
+    // Esto evita conflictos cuando se llama la función después de que la solución
+    // fue instanciada completamente para obtener la lista de restricciones blandas
+    // quebrantadas. Como ya se instanciaron todas las entidades se pasa entity = -1
+    if (entity != -1) {
+        sum += eCapacities[entity];
+    }
+
     return sum > roomCapacity;
 }
 
-bool check_constraints(int room, float roomCapacity, float *eCapacities, vector< vector<int> > eConstraints, vector< vector<int> > rConstraints) {
+bool check_constraints(int entity, int room, float roomCapacity, float *eCapacities, vector< vector<int> > eConstraints, vector< vector<int> > rConstraints) {
     /*
         Chequea si el valor de instanciación (room) es válido.
 
@@ -513,7 +539,7 @@ bool check_constraints(int room, float roomCapacity, float *eCapacities, vector<
                 int room_uses = 0;
                 for(int j = 0; j < ::eTotal; j++) {
                     if (::solution[j] == room) room_uses++;
-                    if (room_uses > 1) {
+                    if (room_uses > 0) {
                         room_already_used = true;
                         break;
                     }
@@ -529,7 +555,7 @@ bool check_constraints(int room, float roomCapacity, float *eCapacities, vector<
     // Si el valor es consistente se procede a validar si tiene restricciones de
     // cuarto y si su capacidad fue superada
     if (consistent && rConstraints.size() && rConstraints[0].size()) {
-        bool is_room_overflow = check_room_overflow(room, roomCapacity, eCapacities, ::solution);
+        bool is_room_overflow = check_room_overflow(entity, room, roomCapacity, eCapacities, ::solution);
         if (rConstraints[0][2] == 1 && is_room_overflow) {
             consistent = false;
         }
@@ -573,7 +599,7 @@ set< vector<int> > getBrokenConstraints(int *pSolution, float *eCapacities, floa
                         {
                             int room = pSolution[i];
                             if (rConstraints[room][0].size()) {
-                                if (check_room_overflow(room, rCapacities[room], eCapacities, pSolution) &&
+                                if (check_room_overflow(-1,room, rCapacities[room], eCapacities, pSolution) &&
                                     hardness == 0) {
                                         save_constraint = true;
                                     }
@@ -670,8 +696,35 @@ set< vector<int> > getBrokenConstraints(int *pSolution, float *eCapacities, floa
     return bsConstraints;
 }
 
-void save_benchmark(int partials, float seconds) {
+void save_benchmark_checks(int checks) {
+    ofstream file;
+    string path = "./out/" + ::instance + "_benchmarck_checks.csv";
+    vector<char> constPath(path.begin(), path.end());
+    constPath.push_back('\0');
+    file.open(&constPath[0], ios::app);
+    file << checks << endl;
+    file.close();
+}
 
+void save_benchmark_timing(auto begin, auto end, float misused_space) {
+    ofstream file;
+    string path = "./out/" + ::instance + "_benchmarck_timing.csv";
+    vector<char> constPath(path.begin(), path.end());
+    constPath.push_back('\0');
+    file.open(&constPath[0], ios::app);
+    auto diff = chrono::duration_cast<chrono::nanoseconds>(end - begin);
+    file << diff.count() << "," << misused_space <<endl;
+    file.close();
+}
+
+void save_benchmark_quality(float misused_space, float penalties) {
+    ofstream file;
+    string path = "./out/" + ::instance + "_benchmarck_timing.csv";
+    vector<char> constPath(path.begin(), path.end());
+    constPath.push_back('\0');
+    file.open(&constPath[0], ios::app);
+    file << misused_space << "," << penalties << endl;
+    file.close();
 }
 
 void save_solution(set< vector<int> >broken_constraints, int *cSolution, vector< vector<float> > stadistics, bool partial_flag) {
@@ -755,6 +808,11 @@ vector< vector<float> > evaluate(set< vector<int> > constraints, float *eCapacit
         room_entities = 0;
     }
 
+    // Just for benchmark
+    if(::benchmark && ::benchmark_type == 3) {
+        save_benchmark_quality(misusedSpace, penalties);
+    }
+
     misusedSpace += penalties;
 
     vector<float> general_stadistics;
@@ -767,6 +825,13 @@ vector< vector<float> > evaluate(set< vector<int> > constraints, float *eCapacit
 
     // si el peso de la solucion parcial es superior al del actual óptimo
     if (misusedSpace < ::minEvaluation) {
+
+        // benchmark timing
+        if (::benchmark && ::benchmark_type == 1) {
+            // Guarda el número de soluciones parciales y el tiempo
+            save_benchmark_timing(::bench_time, chrono::high_resolution_clock::now(), misusedSpace);
+        }
+
         // Se reemplaza el optimo actual por la solucion parcial
         copy(cSolution, cSolution + ::eTotal, optSolution);
         ::optimalBSConstraints = constraints;
@@ -776,27 +841,33 @@ vector< vector<float> > evaluate(set< vector<int> > constraints, float *eCapacit
     return stadistics;
 }
 
-list<int> getNeighbors(vector< vector<int> > eConstraints) {
+list<int> getNeighbors(int next_entity, vector< vector<int> > eConstraints) {
     /*
         Retorna la lista de entidades vecinas(conectadas por restricciones) sin
         instanciar.
     */
     list<int> neighbors;
+    bool added_next_entity = false;
     for(unsigned int i = 0; i < eConstraints.size(); i++) {
         if (eConstraints[i].size()) {
             if (eConstraints[i][1] != ::ALLOCATION_CONSTRAINT &&
                 eConstraints[i][1] != ::NONALLOCATION_CONSTRAINT &&
                 eConstraints[i][1] != ::NOTSHARING_CONSTRAINT &&
                 ::solution[eConstraints[i][3]] == -1) {
+                    if (eConstraints[i][3] == next_entity) added_next_entity = true;
                     neighbors.push_back(eConstraints[i][3]); // save eID
                 }
         }
     }
 
+    if (!added_next_entity) {
+        neighbors.push_back(next_entity);
+    }
+
     return neighbors;
 }
 
-bool check_forward(int entity, int room, vector< vector<int> > eConstraints, int **domain)
+bool check_forward(int entity, int next_entity, int room,float *eCapacities, float *rCapacities, vector< vector< vector<int> > > eConstraints, vector< vector< vector<int> > > rConstraints, int **domain)
 {
     /*
         Setea los valores de dominio de las entidades vecinas (unidas por restricciones)
@@ -805,28 +876,37 @@ bool check_forward(int entity, int room, vector< vector<int> > eConstraints, int
         se setea dwo (domain wipe out) a true para indicar que el valor de la
         instanciacion no es válido y se sale de la función.
     */
-    list<int> neighbors = getNeighbors(eConstraints);
+    //cout << "ENTIDAD: " << entity << endl;
+    list<int> neighbors = getNeighbors(next_entity, eConstraints[entity]);
     for(list<int>::iterator it=neighbors.begin(); it != neighbors.end(); ++it) {
         bool dwo = true;
         for(int i = 0; i < rTotal; i++) {
-            if (domain[*it][i] != -1) continue;
-            else {
+            if (domain[*it][i] != -1) {
+                continue;
+            }else{
+                ::checks++;
+
+                bool unary_past_consistent = check_constraints(*it, i, rCapacities[i], eCapacities, eConstraints[*it], rConstraints[i]);
+
+                if (!unary_past_consistent) {
+                    domain[*it][i] = entity;
+                }
                 // check constraint satisfaction between room and domain[*it][i]
                 // if not valid set domain[*it][i] = -1
-                for (unsigned int j = 0; j < eConstraints.size(); j++) {
-                    if (eConstraints[j].size()) {
-                        if (eConstraints[j][3] == *it) {
-                            if(eConstraints[j][1] == ::SAMEROOM_CONSTRAINT) {
-                                if (i != room && eConstraints[j][2] == 1) {
+                for (unsigned int j = 0; j < eConstraints[entity].size(); j++) {
+                    if (eConstraints[entity][j].size()) {
+                        if (eConstraints[entity][j][3] == *it) {
+                            if(eConstraints[entity][j][1] == ::SAMEROOM_CONSTRAINT) {
+                                if (i != room && eConstraints[entity][j][2] == 1) {
                                     domain[*it][i] = entity;
                                     break;
                                 }
-                            }else if (eConstraints[j][1] == ::NOTSAMEROOM_CONSTRAINT) {
-                                if (i == room && eConstraints[j][2] == 1) {
+                            }else if (eConstraints[entity][j][1] == ::NOTSAMEROOM_CONSTRAINT) {
+                                if (i == room && eConstraints[entity][j][2] == 1) {
                                     domain[*it][i] = entity;
                                     break;
                                 }
-                            }else if (eConstraints[j][1] ==  ::ADJACENCY_CONSTRAINT) {
+                            }else if (eConstraints[entity][j][1] ==  ::ADJACENCY_CONSTRAINT) {
                                 bool adjacent = false;
                                 for(unsigned int k=0; k < ::rAdjacency[room].size(); k++) {
                                     if (::rAdjacency[room][k] == i) {
@@ -835,11 +915,11 @@ bool check_forward(int entity, int room, vector< vector<int> > eConstraints, int
                                     }
                                 }
 
-                                if (!adjacent && eConstraints[j][2] == 1) {
+                                if (!adjacent && eConstraints[entity][j][2] == 1) {
                                     domain[*it][i] = entity;
                                     break;
                                 }
-                            }else if (eConstraints[j][1] == ::NEARBY_CONSTRAINT) {
+                            }else if (eConstraints[entity][j][1] == ::NEARBY_CONSTRAINT) {
                                 bool nearby = false;
                                 for(unsigned int k = 0; k < ::rProximity[room].size(); k++) {
                                     if (::rProximity[room][k] == i) {
@@ -847,11 +927,11 @@ bool check_forward(int entity, int room, vector< vector<int> > eConstraints, int
                                         break;
                                     }
                                 }
-                                if (!nearby && eConstraints[j][2] == 1) {
+                                if (!nearby && eConstraints[entity][j][2] == 1) {
                                     domain[*it][i] = entity;
                                     break;
                                 }
-                            }else if (eConstraints[j][1] == ::AWAYFROM_CONSTRAINT) {
+                            }else if (eConstraints[entity][j][1] == ::AWAYFROM_CONSTRAINT) {
                                 bool nearby = false;
                                 for(unsigned int k = 0; k < ::rProximity[room].size(); k++) {
                                     if (::rProximity[room][k] == i) {
@@ -859,24 +939,27 @@ bool check_forward(int entity, int room, vector< vector<int> > eConstraints, int
                                         break;
                                     }
                                 }
-                                if (nearby && eConstraints[j][2] == 1) {
+                                if (nearby && eConstraints[entity][j][2] == 1) {
                                     domain[*it][i] = entity;
                                     break;
                                 }
                             }
-                        }
+                        } // end if
                     }
-                }
+                } // end for restricciones
+            } // end else
+            if (domain[*(it)][i] == -1) {
+                dwo = false;
             }
-            if (domain[*it][i] == -1) dwo = false;
+        } // end domain for
+        if (dwo) {
+            return false;
         }
-        if (dwo) return false;
     }
-
     return true;
 }
 
-void restore(int entity, vector< vector<int> > eConstraints, int **domain)
+void restore(int entity, int next_entity, vector< vector<int> > eConstraints, int **domain)
 {
     /*
         Restaura todos los valores eliminados (seteados al valor de la entidad en conflicto)
@@ -885,7 +968,7 @@ void restore(int entity, vector< vector<int> > eConstraints, int **domain)
         entidades al estado previo al filtrado de dominio.
     */
 
-    list<int> neighbors = getNeighbors(eConstraints);
+    list<int> neighbors = getNeighbors(next_entity, eConstraints);
     for(list<int>::iterator it=neighbors.begin(); it != neighbors.end(); ++it) {
         for(int i = 0; i < rTotal; i++) {
             if (domain[*it][i] == entity) {
@@ -898,29 +981,26 @@ void restore(int entity, vector< vector<int> > eConstraints, int **domain)
 void forward_checking(int entity, list<int> *entities, float *eCapacities, float *rCapacities, int **domain)
 {
     bool is_consistent = false;
+    int next_entity = choose_entity(entity, entities);
+
 
     // Intenta probar cada valor del dominio de la entidad
     for(int i = 0; i < rTotal; i++) {
         // Saltar todos los valores inválidos
         if (domain[entity][i] != -1) continue;
-        else {
-            solution[entity] = i;
-        }
 
         // Chequea restricciones con la variable como de asignación o capacidad de cuarto
-        is_consistent = check_constraints(i, rCapacities[i], eCapacities, eConstraints[entity], rConstraints[i]);
+        is_consistent = check_constraints(entity, i, rCapacities[i], eCapacities, eConstraints[entity], rConstraints[i]);
         if (is_consistent) {
-
+            solution[entity] = i;
             // Si se está en la ultima entidad de la lista de instanciación
             // se obtiene una solución parcial
             if (entities->back() == entity) {
                 ::partials++;
 
-                if (::benchmark) {
-                    // Guarda el número de soluciones parciales y el tiempo
-                    float diff_time = (clock() - ::bench_time) / CLOCKS_PER_SEC;
-                    save_benchmark(::partials, diff_time);
-                    cout << "partials:\t" << ::partials << "time:\t" << diff_time << endl;
+                if (::benchmark && ::benchmark_type == 2) {
+                    save_benchmark_checks(::checks);
+                    ::checks = 0;
                 }
 
                 set< vector<int> > broken_constraints = getBrokenConstraints(solution, eCapacities, rCapacities, domain);
@@ -943,11 +1023,11 @@ void forward_checking(int entity, list<int> *entities, float *eCapacities, float
                 }
             }else {
                 // Filtra los dominios de las variables adyacentes
-                if (check_forward(entity, i, eConstraints[entity], domain)) {
-                    forward_checking(choose_entity(entity, entities), entities, eCapacities, rCapacities, domain);
+                if (check_forward(entity,next_entity,i,eCapacities, rCapacities, eConstraints, rConstraints, domain)) {
+                    forward_checking(next_entity, entities, eCapacities, rCapacities, domain);
                 }
                 // restaura los valores de dominio de las variables vecinas que tenian conflicto con la instaciacion
-                restore(entity, eConstraints[entity], domain);
+                restore(entity,next_entity, eConstraints[entity], domain);
             }
         }
     }
@@ -981,7 +1061,7 @@ void show_usage(string name)
          << "\t\t\t\t - 1 : variable más conectada primero\n"
          << "\t\t\t\t - 2 : variable menos conectada primero\n"
          <<endl
-         << "\t-b, --benchmark\t\t genera un archivo con tiempos\n"
+         //<< "\t-b, --benchmark\t\t genera un archivo con tiempos\n"
          <<endl
          << "\t-pq, --partials-quantity\t el siguiente argumento indica \n"
          <<"\t\t\t\tla cantidad de soluciones parciales a\n"
