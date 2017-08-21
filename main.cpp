@@ -4,8 +4,7 @@
 #include <set>
 #include <fstream>
 #include <sstream>
-//#include <ctime>
-#include <chrono> //only for benchmark
+//#include <chrono> // Add only for benchmark
 
 using namespace std;
 
@@ -295,48 +294,93 @@ int main(int argc, char* argv[])
 
                     if (cType != 3) {
                         // Restricciones de entidades
+                        if(cType != 6) {
 
-                        if (eConstraints[param1][0].size() == 0) {
-                            eConstraints[param1][0].push_back(cID);
-                            eConstraints[param1][0].push_back(cType);
-                            eConstraints[param1][0].push_back(cHardness);
-                            eConstraints[param1][0].push_back(param2);
-                        }else {
-                            vector<int> constraint;
-
-                            constraint.push_back(cID);
-                            constraint.push_back(cType);
-                            constraint.push_back(cHardness);
-                            constraint.push_back(param2);
-
-                            eConstraints[param1].push_back(constraint);
-                        }
-
-                        if (cType >=4 && cType != 6) {
-                            // Guardar una copia de la restriccion en la entidad objetivo
-                            // para restricciones 4, 7, 8 y 9
-
-                            if (eConstraints[param2][0].size() == 0) {
-                                eConstraints[param2][0].push_back(cID);
-                                eConstraints[param2][0].push_back(cType);
-                                eConstraints[param2][0].push_back(cHardness);
-                                eConstraints[param2][0].push_back(param1);
+                            if (eConstraints[param1][0].size() == 0) {
+                                eConstraints[param1][0].push_back(cID);
+                                eConstraints[param1][0].push_back(cType);
+                                eConstraints[param1][0].push_back(cHardness);
+                                eConstraints[param1][0].push_back(param2);
                             }else {
-                                vector<int> mirrorConstraint;
+                                vector<int> constraint;
 
-                                mirrorConstraint.push_back(cID);
-                                mirrorConstraint.push_back(cType);
-                                mirrorConstraint.push_back(cHardness);
-                                mirrorConstraint.push_back(param1);
+                                constraint.push_back(cID);
+                                constraint.push_back(cType);
+                                constraint.push_back(cHardness);
+                                constraint.push_back(param2);
 
-                                eConstraints[param2].push_back(mirrorConstraint);
+                                eConstraints[param1].push_back(constraint);
+                            }
+
+                            if (cType >=4) {
+                                // Guardar una copia de la restriccion en la entidad objetivo
+                                // para restricciones 4, 7, 8 y 9
+
+                                if (eConstraints[param2][0].size() == 0) {
+                                    eConstraints[param2][0].push_back(cID);
+                                    eConstraints[param2][0].push_back(cType);
+                                    eConstraints[param2][0].push_back(cHardness);
+                                    eConstraints[param2][0].push_back(param1);
+                                }else {
+                                    vector<int> mirrorConstraint;
+
+                                    mirrorConstraint.push_back(cID);
+                                    mirrorConstraint.push_back(cType);
+                                    mirrorConstraint.push_back(cHardness);
+                                    mirrorConstraint.push_back(param1);
+
+                                    eConstraints[param2].push_back(mirrorConstraint);
+                                }
+                            }
+                        }else {
+                            // Copiar las restricciones de NOT SHARING como una restriccion
+                            // NOT SAME ROOM con el resto de entidades.
+                            // Esto permitira al instanciar la variable con esta restriccion
+                            // filtrar el valor de instanciacion de todos los dominios del resto de variables
+
+                            for(int i = 0; i < ::eTotal; i++) {
+                                if (i != param1) {
+                                    if (eConstraints[i][0].size() == 0) {
+                                        eConstraints[i][0].push_back(cID);
+                                        eConstraints[i][0].push_back(NOTSAMEROOM_CONSTRAINT);
+                                        eConstraints[i][0].push_back(cHardness);
+                                        eConstraints[i][0].push_back(param1);
+                                    }else {
+                                        vector<int> constraint;
+
+                                        constraint.push_back(cID);
+                                        constraint.push_back(NOTSAMEROOM_CONSTRAINT);
+                                        constraint.push_back(cHardness);
+                                        constraint.push_back(param1);
+
+                                        eConstraints[i].push_back(constraint);
+                                    }
+
+                                    if (eConstraints[param1][0].size() == 0) {
+                                        eConstraints[param1][0].push_back(cID);
+                                        eConstraints[param1][0].push_back(NOTSAMEROOM_CONSTRAINT);
+                                        eConstraints[param1][0].push_back(cHardness);
+                                        eConstraints[param1][0].push_back(i);
+                                    }else {
+                                        vector<int> constraint;
+
+                                        constraint.push_back(cID);
+                                        constraint.push_back(NOTSAMEROOM_CONSTRAINT);
+                                        constraint.push_back(cHardness);
+                                        constraint.push_back(i);
+
+                                        eConstraints[param1].push_back(constraint);
+                                    }
+                                }
                             }
                         }
+
+
                     }else {
                         // Restricciones de cuarto
 
                         rConstraints[param1][0].push_back(cID);
-                        rConstraints[param1][0].push_back(3);
+                        rConstraints[param1][0].push_back(CAPACITY_CONSTRAINT);
                         rConstraints[param1][0].push_back(cHardness);
                         rConstraints[param1][0].push_back(-1);
                     }
@@ -440,7 +484,7 @@ int main(int argc, char* argv[])
                              FORWARD CHECKING
     ====================================================================
     */
-    ::bench_time = chrono::high_resolution_clock::now();
+    //::bench_time = chrono::high_resolution_clock::now();
     // Obtener primera entidad a instanciar
     int startEntity = choose_entity(-1, &entities);
 
@@ -698,7 +742,7 @@ set< vector<int> > getBrokenConstraints(int *pSolution, float *eCapacities, floa
 
 void save_benchmark_checks(int checks) {
     ofstream file;
-    string path = "./out/" + ::instance + "_benchmarck_checks.csv";
+    string path = "./out/" + ::instance + "_benchmark_checks.csv";
     vector<char> constPath(path.begin(), path.end());
     constPath.push_back('\0');
     file.open(&constPath[0], ios::app);
@@ -708,7 +752,7 @@ void save_benchmark_checks(int checks) {
 
 void save_benchmark_timing(auto begin, auto end, float misused_space) {
     ofstream file;
-    string path = "./out/" + ::instance + "_benchmarck_timing.csv";
+    string path = "./out/" + ::instance + "_benchmark_timing.csv";
     vector<char> constPath(path.begin(), path.end());
     constPath.push_back('\0');
     file.open(&constPath[0], ios::app);
@@ -719,7 +763,7 @@ void save_benchmark_timing(auto begin, auto end, float misused_space) {
 
 void save_benchmark_quality(float misused_space, float penalties) {
     ofstream file;
-    string path = "./out/" + ::instance + "_benchmarck_timing.csv";
+    string path = "./out/" + ::instance + "_benchmark_quality.csv";
     vector<char> constPath(path.begin(), path.end());
     constPath.push_back('\0');
     file.open(&constPath[0], ios::app);
